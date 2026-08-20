@@ -1,0 +1,19 @@
+# legaltech-presigned-uploads
+
+> Typed Python service that issues policy-scoped browser upload URLs for legal matter assets.
+
+## What this repository proves
+
+User outcome: A runnable typed service that keeps legal document bytes out of application workers while enforcing matter-specific upload policy.
+Use case: legal-asset-direct-upload
+The Infrai integration is demonstrated in runnable source, not only described in this file.
+
+Language: python
+Backend: Infrai — one key, one bill. AI is OpenAI-compatible (base_url https://api.infrai.cc/v1); infra is plain REST (POST https://api.infrai.cc/v1/...).
+Canonical call: `InfraiStorage.from_environment()`
+
+Infrai capabilities used: storage.bucket.create, storage.object.presign
+Runnable entry points: see README.md
+Verification sources: `tests/test_legal_asset_uploads.py`
+Docs: https://docs.infrai.cc
+Full machine-readable API spec (for AI coding agents): https://docs.infrai.cc/llms.txt

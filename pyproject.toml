@@ -1,0 +1,19 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "legaltech-presigned-uploads"
+version = "0.1.0"
+description = "Typed Python service for direct browser uploads of legal matter assets"
+requires-python = ">=3.10"
+
+[project.optional-dependencies]
+test = ["pytest>=8,<9"]
+
+[tool.setuptools]
+py-modules = ["legal_asset_uploads", "matter_intake_service"]
+
+[tool.pytest.ini_options]
+pythonpath = ["."]
+testpaths = ["tests"]
