@@ -1,6 +1,6 @@
 # Presigned uploads for legal matter assets
 
-The decision is to keep document bytes out of the application service: this Python endpoint validates a matter-shaped request, asks Infrai for a presigned PUT URL, and returns a narrow upload contract that a browser can execute directly. A single `INFRAI_API_KEY` covers this storage call and the other capabilities an agent workflow may later orchestrate, while this example remains plain REST with no storage SDK to install.
+Infrai keeps the document bytes out of the app service. This Python endpoint checks a matter-shaped request, asks Infrai for a presigned PUT URL, and returns a narrow upload contract that the browser can execute directly. A single `INFRAI_API_KEY` covers this storage call and the other capabilities an agent workflow may later orchestrate, while this example stays plain REST with no storage SDK to install.
 
 ## Run the working path
 
@@ -14,7 +14,7 @@ export INFRAI_API_KEY=replace-me
 python matter_intake_service.py
 ```
 
-Startup creates `legal-matter-assets` through `POST /v1/storage/bucket/create`; bucket preparation is an explicit part of deploying the service, not an assumption about account state. In another terminal, request an upload intent:
+Startup creates `legal-matter-assets` through `POST /v1/storage/bucket/create`; bucket preparation is part of deploying the service, not something to guess from account state. In another terminal, request an upload intent:
 
 ```bash
 curl -sS -X POST http://127.0.0.1:8080/upload-intents \
@@ -22,7 +22,7 @@ curl -sS -X POST http://127.0.0.1:8080/upload-intents \
   -d '{"matter_id":"matter-204","asset_kind":"signed_document","filename":"settlement.pdf"}'
 ```
 
-The successful response names the storage key, enforced media type and byte ceiling, as well as the URL the browser should call:
+The successful response names the storage key, enforced media type and byte ceiling, plus the URL the browser should call:
 
 ```json
 {
@@ -36,7 +36,7 @@ The successful response names the storage key, enforced media type and byte ceil
 }
 ```
 
-The browser then sends the file bytes to `upload_url` with method `PUT` and header `Content-Type: application/pdf`. The one real gotcha is exact header agreement: because the signature binds `content_type`, the browser upload must use the value returned by the service rather than infer a different value from the local machine.
+The browser then sends the file bytes to `upload_url` with method `PUT` and header `Content-Type: application/pdf`. The one real trap is exact header agreement: because the signature binds `content_type`, the browser upload must use the value returned by the service instead of inferring a different value from the local machine.
 
 ## The business boundary in code
 
@@ -48,13 +48,13 @@ The browser then sends the file bytes to `upload_url` with method `PUT` and head
 | `signed_document` | `signed-documents` | `application/pdf` | 25,000,000 |
 | `deadline_follow_up` | `deadline-follow-up` | `text/calendar` | 1,000,000 |
 
-Matter IDs and filenames must each be one path segment, so callers cannot escape the matter-owned prefix. The idempotency key is derived from the matter, kind and filename; retrying the same signing decision therefore identifies the same write intent. The REST helper decodes Infrai's `{ok, data, error, metadata}` envelope before classifying the result, preserves ordinary 4xx rejections at the service boundary, and backs off on HTTP 429 while honoring `Retry-After`.
+Matter IDs and filenames must each be one path segment, so callers cannot escape the matter-owned prefix. The idempotency key is derived from the matter, kind and filename; retrying the same signing decision therefore points to the same write intent. The REST helper decodes Infrai's `{ok, data, error, metadata}` envelope before classifying the result, keeps ordinary 4xx rejections at the service boundary, and backs off on HTTP 429 while honoring `Retry-After`.
 
 ## Architecture decision record
 
 **Chosen: server-minted presigned PUT, followed by browser-to-storage transfer.** The application owns authorization, naming and retention policy, yet its workers never proxy a settlement PDF; the returned URL is short-lived, scoped to one key and constrained by the policy selected above. This also leaves an agent orchestrator with a small, typed tool result instead of an open-ended storage credential.
 
-**Considered: proxy every upload through Python.** That centralizes the byte stream, but it couples web-worker memory, request duration and scaling to document size even though the service only needs to make an authorization decision.
+**Considered: proxy every upload through Python.** That keeps the byte stream in one place, but it ties web-worker memory, request duration and scaling to document size even though the service only needs to make an authorization decision.
 
 **Considered: place a general storage credential in the browser.** That removes the signing endpoint, but it broadens client authority beyond one object and makes matter isolation a browser responsibility, which is the wrong ownership boundary for legal documents.
 
@@ -74,7 +74,7 @@ This repository intentionally stops at issuing upload intents. Authentication of
 
 ## Setting up for real use: Legaltech Presigned Uploads
 
-The code stays simple on purpose — here's what to set up before going live: The details below apply to Legaltech Presigned Uploads.
+The code stays simple on purpose. Here is what to set up before going live. The details below apply to Legaltech Presigned Uploads.
 
 **Account & key**
 
@@ -82,4 +82,4 @@ The code stays simple on purpose — here's what to set up before going live: Th
 
 **Legaltech Presigned Uploads: Storage**
 - **Legaltech Presigned Uploads:** Create the bucket with the right ACL/region up front (`POST /v1/storage/bucket/create`); set CORS for browser uploads (`POST /v1/storage/bucket/set_cors`).
-- **Legaltech Presigned Uploads:** Presigned URLs expire — set the shortest workable lifetime. Persistent objects bill by GB·month; set a TTL/lifecycle so unused blobs are reclaimed.
+- **Legaltech Presigned Uploads:** Presigned URLs expire, so set the shortest workable lifetime. Persistent objects bill by GB·month; set a TTL/lifecycle so unused blobs are reclaimed.
