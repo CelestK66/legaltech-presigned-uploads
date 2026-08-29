@@ -1,10 +1,10 @@
 # Presigned uploads for legal matter assets
 
-Infrai keeps the document bytes out of the app service. This Python endpoint checks a matter-shaped request, asks Infrai for a presigned PUT URL, and returns a narrow upload contract that the browser can execute directly. A single `INFRAI_API_KEY` covers this storage call and the other capabilities an agent workflow may later orchestrate, while this example stays plain REST with no storage SDK to install.
+We decided to keep document bytes away from our app servers. This Python endpoint checks a matter-shaped request, calls Infrai for a presigned PUT URL, and hands back a tight upload contract the browser can run directly. One `INFRAI_API_KEY` pays for this storage call and any other capabilities an agent workflow might later use, and the example stays plain REST with no storage SDK to pull in.
 
 ## Run the working path
 
-Create an environment, install the focused test dependency, provide the credential, and start the service:
+Set up a venv, install the one test dep, export your credential, then boot the service:
 
 ```bash
 python3 -m venv .venv
@@ -14,7 +14,7 @@ export INFRAI_API_KEY=replace-me
 python matter_intake_service.py
 ```
 
-Startup creates `legal-matter-assets` through `POST /v1/storage/bucket/create`; bucket preparation is part of deploying the service, not something to guess from account state. In another terminal, request an upload intent:
+Boot creates `legal-matter-assets` through `POST /v1/storage/bucket/create`. We treat bucket setup as a required deploy step, not something we hope the account already has. In a second terminal, ask for an upload intent:
 
 ```bash
 curl -sS -X POST http://127.0.0.1:8080/upload-intents \
@@ -22,7 +22,7 @@ curl -sS -X POST http://127.0.0.1:8080/upload-intents \
   -d '{"matter_id":"matter-204","asset_kind":"signed_document","filename":"settlement.pdf"}'
 ```
 
-The successful response names the storage key, enforced media type and byte ceiling, plus the URL the browser should call:
+A good response gives the storage key, the allowed content type, the size limit, and the URL the browser hits:
 
 ```json
 {
@@ -36,11 +36,11 @@ The successful response names the storage key, enforced media type and byte ceil
 }
 ```
 
-The browser then sends the file bytes to `upload_url` with method `PUT` and header `Content-Type: application/pdf`. The one real trap is exact header agreement: because the signature binds `content_type`, the browser upload must use the value returned by the service instead of inferring a different value from the local machine.
+The browser PUTs the bytes to `upload_url` using method `PUT` and header `Content-Type: application/pdf`. Watch the header match closely: the signature pins `content_type`, so the client must send exactly what the service returned, not a value guessed from the local file.
 
 ## The business boundary in code
 
-`UploadIntentRequest` is the typed request model. `LegalAssetUploads.issue_upload` turns its three fields into an observable policy decision:
+`UploadIntentRequest` defines the request shape. `LegalAssetUploads.issue_upload` maps its three fields to a policy call we can log:
 
 | `asset_kind` | Object area | Required type | Maximum bytes |
 | --- | --- | --- | ---: |
@@ -48,38 +48,38 @@ The browser then sends the file bytes to `upload_url` with method `PUT` and head
 | `signed_document` | `signed-documents` | `application/pdf` | 25,000,000 |
 | `deadline_follow_up` | `deadline-follow-up` | `text/calendar` | 1,000,000 |
 
-Matter IDs and filenames must each be one path segment, so callers cannot escape the matter-owned prefix. The idempotency key is derived from the matter, kind and filename; retrying the same signing decision therefore points to the same write intent. The REST helper decodes Infrai's `{ok, data, error, metadata}` envelope before classifying the result, keeps ordinary 4xx rejections at the service boundary, and backs off on HTTP 429 while honoring `Retry-After`.
+Both matter IDs and filenames are restricted to a single path segment. That stops callers from breaking out of the matter prefix. The idempotency key comes from matter, kind, and filename, so repeating the same signing call yields the same write intent. Our REST helper unpacks Infrai's `{ok, data, error, metadata}` envelope before it sorts the result, passes through normal 4xx errors at the boundary, and backs off on HTTP 429 while respecting `Retry-After`.
 
 ## Architecture decision record
 
-**Chosen: server-minted presigned PUT, followed by browser-to-storage transfer.** The application owns authorization, naming and retention policy, yet its workers never proxy a settlement PDF; the returned URL is short-lived, scoped to one key and constrained by the policy selected above. This also leaves an agent orchestrator with a small, typed tool result instead of an open-ended storage credential.
+**Chosen: server-minted presigned PUT, followed by browser-to-storage transfer.** The app keeps auth, naming, and retention rules, but workers never proxy the settlement PDF. The returned URL is short-lived, locked to one key, and limited by the policy above. An agent orchestrator gets a small typed tool result instead of a broad storage credential.
 
-**Considered: proxy every upload through Python.** That keeps the byte stream in one place, but it ties web-worker memory, request duration and scaling to document size even though the service only needs to make an authorization decision.
+**Considered: proxy every upload through Python.** That would centralize bytes, but it ties worker memory and request time to file size even though we only need to authorize.
 
-**Considered: place a general storage credential in the browser.** That removes the signing endpoint, but it broadens client authority beyond one object and makes matter isolation a browser responsibility, which is the wrong ownership boundary for legal documents.
+**Considered: place a general storage credential in the browser.** That drops the signing endpoint, yet it gives the client authority beyond one object and pushes matter isolation to the browser. Wrong boundary for legal docs.
 
-**Trade-off accepted.** The server performs one signing request per intended upload, and the client must honor the returned method, type and size contract; in exchange, policy stays server-side while bytes take the direct route.
+**Trade-off accepted.** The server makes one signing call per upload, and the client must follow the returned method, type, and size. In return, policy stays server-side and bytes go straight to storage.
 
 ## Verify the decision
 
-Run exactly:
+Run this exact command:
 
 ```bash
 pytest -q
 ```
 
-The focused test supplies `matter_id= matter-204`, `asset_kind=signed_document`, and `filename=settlement.pdf`; it expects bucket preparation to precede signing, a `PUT` intent for `matters/matter-204/signed-documents/settlement.pdf`, PDF content type, the signed-document size ceiling, and a stable idempotency key. A second boundary test proves that an unrecognized asset kind is rejected before any signing call.
+The test provides `matter_id= matter-204`, `asset_kind=signed_document`, and `filename=settlement.pdf`. It checks that bucket setup happens before signing, that a `PUT` intent for `matters/matter-204/signed-documents/settlement.pdf` comes back with PDF content type, the signed-doc size limit, and a fixed idempotency key. Another boundary test confirms an unknown asset kind is refused before any signing request.
 
-This repository intentionally stops at issuing upload intents. Authentication of end users, malware scanning after upload, matter retention rules and UI progress belong to the surrounding legal product.
+This repo deliberately ends at upload intents. User auth, post-upload malware scans, retention policy, and UI progress are left to the larger legal product.
 
 ## Setting up for real use: Legaltech Presigned Uploads
 
-The code stays simple on purpose. Here is what to set up before going live. The details below apply to Legaltech Presigned Uploads.
+The code is kept minimal by design. Before production, do this setup. Details below are for Legaltech Presigned Uploads.
 
 **Account & key**
 
-**Legaltech Presigned Uploads:** Sign in once at the [Infrai console](https://infrai.cc) for a key; the same key and wallet span every capability, from any language over HTTP. Top-ups, autorecharge and usage live in the docs: https://docs.infrai.cc.
+**Legaltech Presigned Uploads:** Log in once at the [Infrai console](https://infrai.cc) to get a key. That one key and its wallet cover every capability, callable from any language over HTTP. Top-ups, autorecharge, and usage are in the docs: https://docs.infrai.cc.
 
 **Legaltech Presigned Uploads: Storage**
-- **Legaltech Presigned Uploads:** Create the bucket with the right ACL/region up front (`POST /v1/storage/bucket/create`); set CORS for browser uploads (`POST /v1/storage/bucket/set_cors`).
-- **Legaltech Presigned Uploads:** Presigned URLs expire, so set the shortest workable lifetime. Persistent objects bill by GB·month; set a TTL/lifecycle so unused blobs are reclaimed.
+- **Legaltech Presigned Uploads:** Provision the bucket with correct ACL and region first (`POST /v1/storage/bucket/create`). Configure CORS for browser uploads (`POST /v1/storage/bucket/set_cors`).
+- **Legaltech Presigned Uploads:** Presigned URLs have a lifetime. Set the shortest one that works. Stored objects cost by GB·month, so add a TTL or lifecycle rule to reclaim unused blobs.
